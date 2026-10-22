@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>마음쉼표 운영 대시보드</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* Layout: 상단 필터 바 → KPI 6칸 → 2열 차트 그리드 → 채널 요약 표 → 데이터 흐름. 색은 채널(B2C·B2B·B2G·B2H)에만 쓰고 나머지는 잉크 톤. */
+:root {
+  --bg: #f6f7f5;
+  --surface: #fdfdfc;
+  --ink: #141816;
+  --ink-2: #4d5551;
+  --muted: #858c88;
+  --line: #e2e5e1;
+  --axis: #c3c8c3;
+  --accent: #2f6b5c;
+  --accent-wash: #e6efeb;
+  --good: #1a7f37;
+  --bad: #c2382f;
+  --c-b2c: #2a78d6;
+  --c-b2b: #eb6834;
+  --c-b2g: #1baf7a;
+  --c-b2h: #eda100;
+  --neutral-series: #3b4a44;
+  --neutral-series-2: #a3aaa5;
+  --f-ui: "IBM Plex Sans KR", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-num: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1211; --surface: #181c1a; --ink: #eef1ee; --ink-2: #c0c7c2; --muted: #8b928d;
+    --line: #2a302d; --axis: #3a413d; --accent: #7cc4ad; --accent-wash: #1f2c27;
+    --good: #3fb95c; --bad: #ef6b62;
+    --c-b2c: #3987e5; --c-b2b: #d95926; --c-b2g: #199e70; --c-b2h: #c98500;
+    --neutral-series: #d7ddd9; --neutral-series-2: #6b736e;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1211; --surface: #181c1a; --ink: #eef1ee; --ink-2: #c0c7c2; --muted: #8b928d;
+  --line: #2a302d; --axis: #3a413d; --accent: #7cc4ad; --accent-wash: #1f2c27;
+  --good: #3fb95c; --bad: #ef6b62;
+  --c-b2c: #3987e5; --c-b2b: #d95926; --c-b2g: #199e70; --c-b2h: #c98500;
+  --neutral-series: #d7ddd9; --neutral-series-2: #6b736e;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--f-ui); font-size: 14px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 40px;
+}
+.wrap { max-width: 1240px; margin: 0 auto; display: grid; gap: 20px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+button, select, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 헤더 */
+.top { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; }
+.brand { display: grid; gap: 4px; min-width: 0; }
+.eyebrow { font-size: 12px; letter-spacing: .06em; color: var(--muted); font-weight: 500; }
+h1 { font-size: 26px; font-weight: 700; letter-spacing: -.01em; }
+.source { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; background: var(--accent-wash); color: var(--accent); }
+.pill .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pill.live { color: var(--good); }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 13px; font-weight: 500; }
+.btn:hover { border-color: var(--axis); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+
+/* 연결 패널 */
+.connect { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 10px; }
+.connect[hidden] { display: none !important; }
+.connect h2 { font-size: 15px; }
+.connect ol { margin: 0; padding-left: 20px; color: var(--ink-2); display: grid; gap: 2px; }
+.connect .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.connect input { flex: 1 1 320px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.msg { font-size: 13px; color: var(--ink-2); }
+.msg.err { color: var(--bad); }
+
+/* 필터 */
+.filters { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.fgroup { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.flabel { font-size: 12px; color: var(--muted); font-weight: 500; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { white-space: nowrap; border: 0; background: transparent; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent-wash); color: var(--accent); font-weight: 600; }
+select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-family: var(--f-num); font-size: 13px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 5px 12px; cursor: pointer; font-size: 13px; font-weight: 500; }
+.chip .sw { width: 10px; height: 10px; border-radius: 3px; }
+.chip[aria-pressed="false"] { color: var(--muted); }
+.chip[aria-pressed="false"] .sw { opacity: .25; }
+
+/* KPI */
+.kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 6px; align-content: start; }
+.kpi .k { font-size: 12px; color: var(--ink-2); font-weight: 500; }
+.kpi .v { font-family: var(--f-num); font-size: 24px; font-weight: 600; letter-spacing: -.02em; line-height: 1.15; }
+.kpi .v small { font-family: var(--f-ui); font-size: 13px; font-weight: 500; color: var(--ink-2); margin-left: 2px; }
+.kpi .d { font-size: 12px; color: var(--muted); display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.kpi .d b { font-weight: 600; }
+.kpi .d.up b, .kpi .d.down b { font-family: var(--f-num); }
+.d .good { color: var(--good); }
+.d .bad { color: var(--bad); }
+.kpi .sub { font-size: 12px; color: var(--muted); }
+.kpinote { margin: -10px 0 0; font-size: 12px; color: var(--muted); }
+
+/* 차트 */
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 10px; min-width: 0; align-content: start; }
+.card.wide { grid-column: 1 / -1; }
+.chead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.chead h3 { font-size: 15px; font-weight: 600; }
+.chead .note { font-size: 12px; color: var(--muted); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.legend i.ln { height: 2px; border-radius: 1px; width: 14px; }
+.legend i.dash { height: 0; width: 14px; border-top: 2px dashed var(--neutral-series-2); border-radius: 0; background: none !important; }
+.cbox { position: relative; height: 260px; }
+.cbox.short { height: 220px; }
+.insight { font-size: 13px; color: var(--ink-2); margin: 0; }
+.insight b { color: var(--ink); font-weight: 600; }
+
+/* 표 */
+.tablewrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; }
+th, td { padding: 9px 10px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-size: 12px; color: var(--muted); font-weight: 500; }
+th:first-child, td:first-child { text-align: left; }
+td { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
+td:first-child { font-family: var(--f-ui); font-weight: 600; }
+td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; vertical-align: -1px; }
+tfoot td { font-weight: 600; border-bottom: 0; }
+
+/* 데이터 흐름 */
+.flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.step { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.step .n { font-family: var(--f-num); font-size: 12px; color: var(--accent); font-weight: 600; }
+.step h3 { font-size: 15px; }
+.step p { margin: 0; color: var(--ink-2); font-size: 13px; }
+.step code { font-family: var(--f-num); font-size: 12px; background: var(--accent-wash); color: var(--accent); padding: 1px 5px; border-radius: 4px; }
+.sectitle { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+footer { font-size: 12px; color: var(--muted); }
+
+@media (max-width: 1080px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) {
+  .grid, .flow { grid-template-columns: minmax(0, 1fr); }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  h1 { font-size: 22px; }
+  .kpi .v { font-size: 20px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <span class="eyebrow">디지털 정서 케어 서비스 · 고객 운영</span>
+      <h1>마음쉼표 운영 대시보드</h1>
+    </div>
+    <div class="source">
+      <span class="pill" id="srcPill"><span class="dot"></span><span id="srcText">데모 데이터</span></span>
+      <button class="btn" id="connectToggle" type="button" aria-expanded="false" aria-controls="connectPanel">구글 시트 연결</button>
+    </div>
+  </header>
+
+  <section class="connect" id="connectPanel" hidden>
+    <h2>구글 시트 연결</h2>
+    <ol>
+      <li>운영 데이터 xlsx 파일을 구글 드라이브에 올리고 구글 스프레드시트로 저장합니다.</li>
+      <li>공유 설정을 ‘링크가 있는 모든 사용자 · 뷰어’로 바꿉니다.</li>
+      <li>스프레드시트 주소를 아래에 붙여넣습니다. 대시보드는 집계_월별채널, 집계_문의유형, 집계_회원구성 시트를 읽습니다.</li>
+    </ol>
+    <div class="row">
+      <input id="sheetUrl" type="url" placeholder="https://docs.google.com/spreadsheets/d/…/edit" autocomplete="off">
+      <button class="btn primary" id="connectBtn" type="button">불러오기</button>
+      <button class="btn" id="demoBtn" type="button">데모 데이터로 보기</button>
+    </div>
+    <p class="msg" id="connectMsg">연결 전에는 시트 집계 탭과 같은 수치의 데모 데이터를 보여줍니다.</p>
+  </section>
+
+  <section class="filters" aria-label="필터">
+    <div class="fgroup">
+      <span class="flabel">기간</span>
+      <div class="seg" role="group" aria-label="최근 기간 빠른 선택" title="마지막 월부터 거슬러 선택">
+        <button type="button" data-preset="3">3개월</button>
+        <button type="button" data-preset="6">6개월</button>
+        <button type="button" data-preset="12">12개월</button>
+        <button type="button" data-preset="all">전체</button>
+      </div>
+      <select id="fromM" aria-label="시작 월"></select>
+      <span class="flabel">~</span>
+      <select id="toM" aria-label="종료 월"></select>
+    </div>
+    <div class="fgroup" id="chips" role="group" aria-label="채널">
+      <span class="flabel">채널</span>
+    </div>
+  </section>
+
+  <section class="kpis" id="kpis" aria-label="핵심 지표"></section>
+  <p class="kpinote" id="kpiNote"></p>
+
+  <section class="grid">
+    <article class="card">
+      <div class="chead"><h3>MAU 추이</h3><span class="note">월 1회 이상 이용한 회원</span></div>
+      <div class="legend" id="lgMau"></div>
+      <div class="cbox"><canvas id="chMau" aria-label="채널별 MAU 추이"></canvas></div>
+    </article>
+    <article class="card">
+      <div class="chead"><h3>매출 추이</h3><span class="note">구독매출 + 계약매출, 단위 만원</span></div>
+      <div class="legend" id="lgRev"></div>
+      <div class="cbox"><canvas id="chRev" aria-label="채널별 매출 추이"></canvas></div>
+    </article>
+    <article class="card">
+      <div class="chead"><h3>신규가입 · 해지</h3><span class="note">선택 채널 합계</span></div>
+      <div class="legend">
+        <span><i class="ln" style="background:var(--neutral-series)"></i>신규가입</span>
+        <span><i class="dash"></i>해지</span>
+      </div>
+      <div class="cbox"><canvas id="chJoin" aria-label="월별 신규가입과 해지"></canvas></div>
+    </article>
+    <article class="card">
+      <div class="chead"><h3>콘텐츠별 이용 횟수</h3><span class="note">선택 기간 합계</span></div>
+      <p class="insight" id="insContent"></p>
+      <div class="cbox short"><canvas id="chContent" aria-label="콘텐츠별 이용 횟수"></canvas></div>
+    </article>
+    <article class="card">
+      <div class="chead"><h3>문의 유형</h3><span class="note">선택 기간 합계</span></div>
+      <p class="insight" id="insInq"></p>
+      <div class="cbox short"><canvas id="chInq" aria-label="문의 유형별 건수"></canvas></div>
+    </article>
+    <article class="card">
+      <div class="chead"><h3>문의 평균 처리시간</h3><span class="note">단위 시간</span></div>
+      <p class="insight" id="insTime"></p>
+      <div class="cbox short"><canvas id="chTime" aria-label="월별 문의 평균 처리시간"></canvas></div>
+    </article>
+    <article class="card wide">
+      <div class="chead"><h3>연령대별 활성회원</h3><span class="note">데이터 마지막 날 기준, 기간 필터 미적용</span></div>
+      <div class="legend" id="lgAge"></div>
+      <div class="cbox short"><canvas id="chAge" aria-label="연령대별 채널 활성회원"></canvas></div>
+    </article>
+    <article class="card wide">
+      <div class="chead"><h3>채널별 요약</h3><span class="note" id="tblNote"></span></div>
+      <div class="tablewrap"><table id="tbl"></table></div>
+    </article>
+  </section>
+
+  <section class="grid" style="gap:10px" aria-label="데이터 흐름">
+    <div class="sectitle wide" style="grid-column:1/-1">데이터 흐름</div>
+    <div class="flow" style="grid-column:1/-1">
+      <div class="step">
+        <span class="n">원본</span>
+        <h3>구글 시트 원본 5개 시트</h3>
+        <p>회원, 월별이용, 결제, 기관계약, 문의. 약 11만 행. 가입월·해지월·상태는 <code>TEXT</code>·<code>IF</code> 수식으로 계산합니다.</p>
+      </div>
+      <div class="step">
+        <span class="n">집계</span>
+        <h3>수식 집계 3개 시트</h3>
+        <p>월 × 채널 KPI를 <code>COUNTIFS</code>·<code>SUMIFS</code>·<code>EOMONTH</code>로 계산합니다. 계약매출은 계약기간이 걸친 월에 월환산매출을 배분합니다.</p>
+      </div>
+      <div class="step">
+        <span class="n">시각화</span>
+        <h3>웹 대시보드</h3>
+        <p>집계 시트를 CSV로 읽어 기간·채널 필터에 맞게 다시 합산합니다. 원본 시트를 고치면 집계와 대시보드에 반영됩니다.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>포트폴리오용 가상 데이터입니다. 실제 서비스·기관·개인과 관련이 없습니다.</footer>
+</div>
+
+<script>
+const DEMO = {"monthly":{"cols":["월","채널","신규가입","해지","월말활성회원","MAU","명상","감정일기","심리검사","AI대화","총매출","문의건수","처리시간합","만족도합"],"rows":[["2024-10","B2C",287,3,284,198,531,521,204,519,2450400,8,60.5,29],["2024-10","B2B",228,0,228,146,392,217,170,232,2350000,11,97.7,37],["2024-10","B2G",101,0,101,69,111,133,99,85,1125000,10,139.4,36],["2024-10","B2H",142,0,142,83,80,103,229,112,1166667,5,63.8,22],["2024-11","B2C",287,28,543,381,1043,1032,344,1069,2283700,10,108.3,34],["2024-11","B2B",69,1,296,182,444,242,169,286,2350000,11,115.9,39],["2024-11","B2G",431,0,532,321,538,617,476,388,4875001,13,141.1,47],["2024-11","B2H",236,0,378,203,231,226,622,266,2500000,13,133.9,50],["2024-12","B2C",284,54,773,531,1482,1529,470,1504,2936700,23,249.3,85],["2024-12","B2B",405,4,697,421,1064,558,451,699,6300000,19,183.0,67],["2024-12","B2G",120,6,646,380,723,762,564,520,4875001,21,254.3,78],["2024-12","B2H",178,3,553,249,300,260,751,330,3233333,14,176.9,48],["2025-01","B2C",344,76,1041,721,2022,2017,649,2024,4626600,28,246.0,105],["2025-01","B2B",182,3,876,489,1171,652,472,753,6850000,21,206.6,69],["2025-01","B2G",257,3,900,502,912,940,760,685,6750001,19,160.5,70],["2025-01","B2H",45,0,598,290,327,333,834,380,3233333,13,115.5,47],["2025-02","B2C",315,96,1260,884,2510,2463,835,2487,3818400,38,346.7,140],["2025-02","B2B",118,7,987,529,1281,756,484,840,7850000,27,272.2,100],["2025-02","B2G",64,4,960,516,956,986,726,704,6750001,34,303.2,129],["2025-02","B2H",242,6,834,394,467,464,1189,525,4766666,22,231.1,87],["2025-03","B2C",324,135,1449,973,2783,2730,923,2811,4639300,35,361.9,128],["2025-03","B2B",42,12,1017,520,1316,753,514,886,7850000,29,305.2,112],["2025-03","B2G",24,8,976,495,884,969,695,664,6750001,18,164.5,64],["2025-03","B2H",89,6,917,399,487,441,1167,489,4766666,16,116.9,59],["2025-04","B2C",304,111,1642,1080,3067,3083,1024,3036,5677200,21,240.0,76],["2025-04","B2B",82,5,1094,512,1243,703,472,802,8650000,24,209.9,95],["2025-04","B2G",5,9,972,440,808,841,625,609,6750001,19,174.6,74],["2025-04","B2H",25,6,936,311,393,348,942,405,4766666,24,210.6,91],["2025-05","B2C",304,162,1784,1179,3398,3341,1095,3363,6369400,49,554.7,184],["2025-05","B2B",233,5,1322,678,1657,982,695,1045,10750000,40,396.8,153],["2025-05","B2G",3,11,964,405,736,733,618,513,6750001,19,168.2,76],["2025-05","B2H",121,8,1049,383,452,407,1188,514,5666666,27,244.8,101],["2025-06","B2C",339,180,1943,1308,3807,3676,1275,3723,6192800,50,512.5,195],["2025-06","B2B",78,11,1389,630,1516,858,599,995,10750000,28,247.1,102],["2025-06","B2G",164,9,1119,476,843,916,677,582,8125001,27,177.7,104],["2025-06","B2H",42,10,1081,351,386,401,1038,475,5666666,16,118.8,69],["2025-07","B2C",319,211,2051,1353,3960,3971,1309,3898,7043400,43,317.8,161],["2025-07","B2B",258,12,1635,722,1836,1006,696,1146,12900000,36,274.9,143],["2025-07","B2G",41,8,1152,468,848,925,683,619,8125001,23,164.5,93],["2025-07","B2H",8,15,1074,294,322,334,829,396,5666666,18,137.8,64],["2025-08","B2C",360,166,2245,1406,4211,4274,1448,4313,8140100,49,432.5,187],["2025-08","B2B",466,17,2084,965,2289,1405,954,1573,16800000,51,482.6,205],["2025-08","B2G",20,13,1159,450,836,929,644,602,8125001,29,255.7,106],["2025-08","B2H",7,8,1073,260,270,301,756,329,5666666,9,73.3,37],["2025-09","B2C",416,210,2451,1602,4701,4825,1547,4753,7756000,55,480.2,220],["2025-09","B2B",451,19,2516,1230,3023,1765,1243,2062,20350000,73,562.2,283],["2025-09","B2G",8,8,1159,423,784,838,616,539,8125001,22,135.8,88],["2025-09","B2H",144,6,1211,288,318,295,789,353,6966666,13,121.3,50],["2025-10","B2C",468,251,2668,1748,5255,5300,1714,5155,10957200,60,472.0,234],["2025-10","B2B",197,21,2692,1203,2902,1731,1170,1896,20550000,59,424.5,223],["2025-10","B2G",17,217,959,381,659,704,567,524,8333334,22,159.2,82],["2025-10","B2H",82,5,1288,325,361,365,943,454,7099999,18,150.1,67],["2025-11","B2C",403,228,2843,1786,5542,5365,1724,5465,11125900,63,450.2,256],["2025-11","B2B",57,17,2732,1151,2931,1641,1149,1967,20550000,50,418.2,193],["2025-11","B2G",243,4,1198,474,849,889,700,595,8458333,22,136.9,91],["2025-11","B2H",237,8,1517,412,497,430,1220,500,8633332,23,188.1,95],["2025-12","B2C",408,274,2977,1922,5901,5870,1994,5853,11078200,73,530.2,284],["2025-12","B2B",171,14,2889,1181,2921,1653,1131,1967,22050000,63,423.1,263],["2025-12","B2G",163,3,1358,560,1030,1167,812,722,9291666,27,259.1,101],["2025-12","B2H",252,3,1766,491,583,553,1442,619,9833333,22,164.3,92],["2026-01","B2C",544,259,3262,2097,6459,6479,2175,6471,12690100,74,538.8,309],["2026-01","B2B",69,109,2849,1125,2786,1596,1128,1892,22100000,63,463.1,249],["2026-01","B2G",110,7,1461,586,1094,1156,826,757,9541666,29,155.7,116],["2026-01","B2H",71,322,1515,493,550,583,1408,673,9833333,21,142.0,84],["2026-02","B2C",511,298,3475,2262,6883,6867,2361,6853,12878800,85,561.0,348],["2026-02","B2B",68,18,2899,1075,2742,1544,1002,1690,21750000,56,419.9,231],["2026-02","B2G",31,6,1486,528,881,982,785,659,9541666,36,293.8,151],["2026-02","B2H",18,9,1524,461,553,570,1373,569,8300000,23,166.4,93],["2026-03","B2C",441,338,3578,2333,7188,7307,2537,7052,12416100,80,519.9,330],["2026-03","B2B",24,20,2903,990,2490,1431,1033,1599,21750000,34,213.1,143],["2026-03","B2G",79,7,1558,559,1016,1075,784,721,10166666,23,157.7,96],["2026-03","B2H",8,9,1523,366,429,388,1092,468,8300000,21,147.9,90],["2026-04","B2C",478,350,3706,2401,7623,7358,2476,7432,14155700,83,617.0,351],["2026-04","B2B",20,292,2631,962,2371,1379,897,1569,21850000,59,326.2,244],["2026-04","B2G",22,9,1571,578,1007,1135,799,723,10166666,33,196.6,136],["2026-04","B2H",0,63,1460,360,424,397,1043,449,8300000,21,170.2,89],["2026-05","B2C",436,340,3802,2482,7675,7807,2549,7905,15242900,87,551.5,371],["2026-05","B2B",10,15,2626,886,2172,1258,837,1477,19750000,37,191.4,152],["2026-05","B2G",5,9,1567,520,985,1071,725,708,10166666,34,195.0,139],["2026-05","B2H",17,11,1466,326,394,386,968,364,8000000,16,136.3,68],["2026-06","B2C",500,336,3966,2604,8240,8329,2770,7954,14957400,104,571.4,447],["2026-06","B2B",3,11,2618,794,1899,1194,821,1376,19750000,36,175.5,156],["2026-06","B2G",22,4,1585,516,909,1026,833,644,10291666,26,148.6,108],["2026-06","B2H",6,5,1467,299,336,331,831,402,8000000,15,59.2,57],["2026-07","B2C",466,379,4053,2621,8583,8338,2811,8477,16410300,83,518.8,355],["2026-07","B2B",42,7,2653,749,1879,1073,767,1253,19950000,35,166.7,149],["2026-07","B2G",8,6,1587,491,939,1042,699,621,10291666,26,134.1,102],["2026-07","B2H",2,10,1459,274,292,324,830,348,8000000,19,111.1,81],["2026-08","B2C",476,388,4141,2635,8667,8555,2953,8587,18298200,100,514.3,433],["2026-08","B2B",103,6,2750,842,2076,1200,845,1404,20500000,47,272.3,205],["2026-08","B2G",8,7,1588,469,841,928,670,610,10291666,20,102.4,84],["2026-08","B2H",2,5,1456,234,277,269,708,299,8000000,8,53.3,34],["2026-09","B2C",590,384,4347,2890,9330,9327,3119,9221,17864800,100,514.4,426],["2026-09","B2B",90,5,2835,847,2058,1181,860,1398,21300000,44,203.8,185],["2026-09","B2G",1,2,1587,464,812,909,629,572,10291666,29,142.8,126],["2026-09","B2H",35,11,1480,251,274,307,719,321,8066667,13,63.9,59]]},"inquiry":{"cols":["월","채널","문의유형","건수"],"rows":[["2024-10","B2C","결제·환불",4],["2024-10","B2C","로그인·계정",3],["2024-10","B2C","콘텐츠 이용",0],["2024-10","B2C","기관 연동",0],["2024-10","B2C","기타",1],["2024-10","B2B","결제·환불",0],["2024-10","B2B","로그인·계정",4],["2024-10","B2B","콘텐츠 이용",3],["2024-10","B2B","기관 연동",4],["2024-10","B2B","기타",0],["2024-10","B2G","결제·환불",0],["2024-10","B2G","로그인·계정",7],["2024-10","B2G","콘텐츠 이용",1],["2024-10","B2G","기관 연동",2],["2024-10","B2G","기타",0],["2024-10","B2H","결제·환불",0],["2024-10","B2H","로그인·계정",0],["2024-10","B2H","콘텐츠 이용",1],["2024-10","B2H","기관 연동",2],["2024-10","B2H","기타",2],["2024-11","B2C","결제·환불",5],["2024-11","B2C","로그인·계정",2],["2024-11","B2C","콘텐츠 이용",2],["2024-11","B2C","기관 연동",0],["2024-11","B2C","기타",1],["2024-11","B2B","결제·환불",0],["2024-11","B2B","로그인·계정",3],["2024-11","B2B","콘텐츠 이용",2],["2024-11","B2B","기관 연동",2],["2024-11","B2B","기타",4],["2024-11","B2G","결제·환불",0],["2024-11","B2G","로그인·계정",2],["2024-11","B2G","콘텐츠 이용",3],["2024-11","B2G","기관 연동",6],["2024-11","B2G","기타",2],["2024-11","B2H","결제·환불",0],["2024-11","B2H","로그인·계정",2],["2024-11","B2H","콘텐츠 이용",4],["2024-11","B2H","기관 연동",6],["2024-11","B2H","기타",1],["2024-12","B2C","결제·환불",8],["2024-12","B2C","로그인·계정",8],["2024-12","B2C","콘텐츠 이용",5],["2024-12","B2C","기관 연동",0],["2024-12","B2C","기타",2],["2024-12","B2B","결제·환불",0],["2024-12","B2B","로그인·계정",9],["2024-12","B2B","콘텐츠 이용",4],["2024-12","B2B","기관 연동",4],["2024-12","B2B","기타",2],["2024-12","B2G","결제·환불",0],["2024-12","B2G","로그인·계정",11],["2024-12","B2G","콘텐츠 이용",4],["2024-12","B2G","기관 연동",3],["2024-12","B2G","기타",3],["2024-12","B2H","결제·환불",0],["2024-12","B2H","로그인·계정",5],["2024-12","B2H","콘텐츠 이용",3],["2024-12","B2H","기관 연동",3],["2024-12","B2H","기타",3],["2025-01","B2C","결제·환불",11],["2025-01","B2C","로그인·계정",8],["2025-01","B2C","콘텐츠 이용",5],["2025-01","B2C","기관 연동",0],["2025-01","B2C","기타",4],["2025-01","B2B","결제·환불",0],["2025-01","B2B","로그인·계정",2],["2025-01","B2B","콘텐츠 이용",3],["2025-01","B2B","기관 연동",9],["2025-01","B2B","기타",7],["2025-01","B2G","결제·환불",0],["2025-01","B2G","로그인·계정",5],["2025-01","B2G","콘텐츠 이용",5],["2025-01","B2G","기관 연동",8],["2025-01","B2G","기타",1],["2025-01","B2H","결제·환불",0],["2025-01","B2H","로그인·계정",6],["2025-01","B2H","콘텐츠 이용",3],["2025-01","B2H","기관 연동",4],["2025-01","B2H","기타",0],["2025-02","B2C","결제·환불",20],["2025-02","B2C","로그인·계정",8],["2025-02","B2C","콘텐츠 이용",4],["2025-02","B2C","기관 연동",0],["2025-02","B2C","기타",6],["2025-02","B2B","결제·환불",0],["2025-02","B2B","로그인·계정",8],["2025-02","B2B","콘텐츠 이용",10],["2025-02","B2B","기관 연동",8],["2025-02","B2B","기타",1],["2025-02","B2G","결제·환불",0],["2025-02","B2G","로그인·계정",9],["2025-02","B2G","콘텐츠 이용",8],["2025-02","B2G","기관 연동",14],["2025-02","B2G","기타",3],["2025-02","B2H","결제·환불",0],["2025-02","B2H","로그인·계정",8],["2025-02","B2H","콘텐츠 이용",8],["2025-02","B2H","기관 연동",4],["2025-02","B2H","기타",2],["2025-03","B2C","결제·환불",16],["2025-03","B2C","로그인·계정",8],["2025-03","B2C","콘텐츠 이용",7],["2025-03","B2C","기관 연동",0],["2025-03","B2C","기타",4],["2025-03","B2B","결제·환불",0],["2025-03","B2B","로그인·계정",6],["2025-03","B2B","콘텐츠 이용",10],["2025-03","B2B","기관 연동",10],["2025-03","B2B","기타",3],["2025-03","B2G","결제·환불",0],["2025-03","B2G","로그인·계정",8],["2025-03","B2G","콘텐츠 이용",3],["2025-03","B2G","기관 연동",7],["2025-03","B2G","기타",0],["2025-03","B2H","결제·환불",0],["2025-03","B2H","로그인·계정",6],["2025-03","B2H","콘텐츠 이용",6],["2025-03","B2H","기관 연동",3],["2025-03","B2H","기타",1],["2025-04","B2C","결제·환불",9],["2025-04","B2C","로그인·계정",7],["2025-04","B2C","콘텐츠 이용",3],["2025-04","B2C","기관 연동",0],["2025-04","B2C","기타",2],["2025-04","B2B","결제·환불",0],["2025-04","B2B","로그인·계정",9],["2025-04","B2B","콘텐츠 이용",6],["2025-04","B2B","기관 연동",7],["2025-04","B2B","기타",2],["2025-04","B2G","결제·환불",0],["2025-04","B2G","로그인·계정",11],["2025-04","B2G","콘텐츠 이용",5],["2025-04","B2G","기관 연동",1],["2025-04","B2G","기타",2],["2025-04","B2H","결제·환불",0],["2025-04","B2H","로그인·계정",7],["2025-04","B2H","콘텐츠 이용",7],["2025-04","B2H","기관 연동",7],["2025-04","B2H","기타",3],["2025-05","B2C","결제·환불",16],["2025-05","B2C","로그인·계정",13],["2025-05","B2C","콘텐츠 이용",13],["2025-05","B2C","기관 연동",0],["2025-05","B2C","기타",7],["2025-05","B2B","결제·환불",0],["2025-05","B2B","로그인·계정",18],["2025-05","B2B","콘텐츠 이용",11],["2025-05","B2B","기관 연동",6],["2025-05","B2B","기타",5],["2025-05","B2G","결제·환불",0],["2025-05","B2G","로그인·계정",5],["2025-05","B2G","콘텐츠 이용",4],["2025-05","B2G","기관 연동",8],["2025-05","B2G","기타",2],["2025-05","B2H","결제·환불",0],["2025-05","B2H","로그인·계정",5],["2025-05","B2H","콘텐츠 이용",7],["2025-05","B2H","기관 연동",12],["2025-05","B2H","기타",3],["2025-06","B2C","결제·환불",17],["2025-06","B2C","로그인·계정",21],["2025-06","B2C","콘텐츠 이용",9],["2025-06","B2C","기관 연동",0],["2025-06","B2C","기타",3],["2025-06","B2B","결제·환불",0],["2025-06","B2B","로그인·계정",12],["2025-06","B2B","콘텐츠 이용",7],["2025-06","B2B","기관 연동",8],["2025-06","B2B","기타",1],["2025-06","B2G","결제·환불",0],["2025-06","B2G","로그인·계정",13],["2025-06","B2G","콘텐츠 이용",4],["2025-06","B2G","기관 연동",7],["2025-06","B2G","기타",3],["2025-06","B2H","결제·환불",0],["2025-06","B2H","로그인·계정",5],["2025-06","B2H","콘텐츠 이용",2],["2025-06","B2H","기관 연동",7],["2025-06","B2H","기타",2],["2025-07","B2C","결제·환불",17],["2025-07","B2C","로그인·계정",11],["2025-07","B2C","콘텐츠 이용",9],["2025-07","B2C","기관 연동",0],["2025-07","B2C","기타",6],["2025-07","B2B","결제·환불",0],["2025-07","B2B","로그인·계정",9],["2025-07","B2B","콘텐츠 이용",5],["2025-07","B2B","기관 연동",14],["2025-07","B2B","기타",8],["2025-07","B2G","결제·환불",0],["2025-07","B2G","로그인·계정",9],["2025-07","B2G","콘텐츠 이용",5],["2025-07","B2G","기관 연동",9],["2025-07","B2G","기타",0],["2025-07","B2H","결제·환불",0],["2025-07","B2H","로그인·계정",7],["2025-07","B2H","콘텐츠 이용",8],["2025-07","B2H","기관 연동",3],["2025-07","B2H","기타",0],["2025-08","B2C","결제·환불",18],["2025-08","B2C","로그인·계정",18],["2025-08","B2C","콘텐츠 이용",8],["2025-08","B2C","기관 연동",0],["2025-08","B2C","기타",5],["2025-08","B2B","결제·환불",0],["2025-08","B2B","로그인·계정",13],["2025-08","B2B","콘텐츠 이용",18],["2025-08","B2B","기관 연동",17],["2025-08","B2B","기타",3],["2025-08","B2G","결제·환불",0],["2025-08","B2G","로그인·계정",7],["2025-08","B2G","콘텐츠 이용",7],["2025-08","B2G","기관 연동",10],["2025-08","B2G","기타",5],["2025-08","B2H","결제·환불",0],["2025-08","B2H","로그인·계정",1],["2025-08","B2H","콘텐츠 이용",4],["2025-08","B2H","기관 연동",4],["2025-08","B2H","기타",0],["2025-09","B2C","결제·환불",26],["2025-09","B2C","로그인·계정",11],["2025-09","B2C","콘텐츠 이용",14],["2025-09","B2C","기관 연동",0],["2025-09","B2C","기타",4],["2025-09","B2B","결제·환불",0],["2025-09","B2B","로그인·계정",22],["2025-09","B2B","콘텐츠 이용",15],["2025-09","B2B","기관 연동",31],["2025-09","B2B","기타",5],["2025-09","B2G","결제·환불",0],["2025-09","B2G","로그인·계정",9],["2025-09","B2G","콘텐츠 이용",8],["2025-09","B2G","기관 연동",3],["2025-09","B2G","기타",2],["2025-09","B2H","결제·환불",0],["2025-09","B2H","로그인·계정",4],["2025-09","B2H","콘텐츠 이용",2],["2025-09","B2H","기관 연동",5],["2025-09","B2H","기타",2],["2025-10","B2C","결제·환불",24],["2025-10","B2C","로그인·계정",14],["2025-10","B2C","콘텐츠 이용",17],["2025-10","B2C","기관 연동",0],["2025-10","B2C","기타",5],["2025-10","B2B","결제·환불",0],["2025-10","B2B","로그인·계정",13],["2025-10","B2B","콘텐츠 이용",24],["2025-10","B2B","기관 연동",19],["2025-10","B2B","기타",3],["2025-10","B2G","결제·환불",0],["2025-10","B2G","로그인·계정",3],["2025-10","B2G","콘텐츠 이용",4],["2025-10","B2G","기관 연동",9],["2025-10","B2G","기타",6],["2025-10","B2H","결제·환불",0],["2025-10","B2H","로그인·계정",3],["2025-10","B2H","콘텐츠 이용",3],["2025-10","B2H","기관 연동",8],["2025-10","B2H","기타",4],["2025-11","B2C","결제·환불",17],["2025-11","B2C","로그인·계정",25],["2025-11","B2C","콘텐츠 이용",12],["2025-11","B2C","기관 연동",0],["2025-11","B2C","기타",9],["2025-11","B2B","결제·환불",0],["2025-11","B2B","로그인·계정",23],["2025-11","B2B","콘텐츠 이용",9],["2025-11","B2B","기관 연동",8],["2025-11","B2B","기타",10],["2025-11","B2G","결제·환불",0],["2025-11","B2G","로그인·계정",8],["2025-11","B2G","콘텐츠 이용",4],["2025-11","B2G","기관 연동",6],["2025-11","B2G","기타",4],["2025-11","B2H","결제·환불",0],["2025-11","B2H","로그인·계정",7],["2025-11","B2H","콘텐츠 이용",11],["2025-11","B2H","기관 연동",4],["2025-11","B2H","기타",1],["2025-12","B2C","결제·환불",22],["2025-12","B2C","로그인·계정",25],["2025-12","B2C","콘텐츠 이용",15],["2025-12","B2C","기관 연동",0],["2025-12","B2C","기타",11],["2025-12","B2B","결제·환불",0],["2025-12","B2B","로그인·계정",25],["2025-12","B2B","콘텐츠 이용",13],["2025-12","B2B","기관 연동",19],["2025-12","B2B","기타",6],["2025-12","B2G","결제·환불",0],["2025-12","B2G","로그인·계정",12],["2025-12","B2G","콘텐츠 이용",8],["2025-12","B2G","기관 연동",6],["2025-12","B2G","기타",1],["2025-12","B2H","결제·환불",0],["2025-12","B2H","로그인·계정",10],["2025-12","B2H","콘텐츠 이용",5],["2025-12","B2H","기관 연동",7],["2025-12","B2H","기타",0],["2026-01","B2C","결제·환불",29],["2026-01","B2C","로그인·계정",19],["2026-01","B2C","콘텐츠 이용",19],["2026-01","B2C","기관 연동",0],["2026-01","B2C","기타",7],["2026-01","B2B","결제·환불",0],["2026-01","B2B","로그인·계정",23],["2026-01","B2B","콘텐츠 이용",15],["2026-01","B2B","기관 연동",19],["2026-01","B2B","기타",6],["2026-01","B2G","결제·환불",0],["2026-01","B2G","로그인·계정",13],["2026-01","B2G","콘텐츠 이용",6],["2026-01","B2G","기관 연동",8],["2026-01","B2G","기타",2],["2026-01","B2H","결제·환불",0],["2026-01","B2H","로그인·계정",4],["2026-01","B2H","콘텐츠 이용",3],["2026-01","B2H","기관 연동",7],["2026-01","B2H","기타",7],["2026-02","B2C","결제·환불",41],["2026-02","B2C","로그인·계정",17],["2026-02","B2C","콘텐츠 이용",18],["2026-02","B2C","기관 연동",0],["2026-02","B2C","기타",9],["2026-02","B2B","결제·환불",0],["2026-02","B2B","로그인·계정",15],["2026-02","B2B","콘텐츠 이용",18],["2026-02","B2B","기관 연동",16],["2026-02","B2B","기타",7],["2026-02","B2G","결제·환불",0],["2026-02","B2G","로그인·계정",10],["2026-02","B2G","콘텐츠 이용",9],["2026-02","B2G","기관 연동",11],["2026-02","B2G","기타",6],["2026-02","B2H","결제·환불",0],["2026-02","B2H","로그인·계정",9],["2026-02","B2H","콘텐츠 이용",6],["2026-02","B2H","기관 연동",5],["2026-02","B2H","기타",3],["2026-03","B2C","결제·환불",29],["2026-03","B2C","로그인·계정",27],["2026-03","B2C","콘텐츠 이용",15],["2026-03","B2C","기관 연동",0],["2026-03","B2C","기타",9],["2026-03","B2B","결제·환불",0],["2026-03","B2B","로그인·계정",11],["2026-03","B2B","콘텐츠 이용",12],["2026-03","B2B","기관 연동",6],["2026-03","B2B","기타",5],["2026-03","B2G","결제·환불",0],["2026-03","B2G","로그인·계정",8],["2026-03","B2G","콘텐츠 이용",8],["2026-03","B2G","기관 연동",5],["2026-03","B2G","기타",2],["2026-03","B2H","결제·환불",0],["2026-03","B2H","로그인·계정",6],["2026-03","B2H","콘텐츠 이용",9],["2026-03","B2H","기관 연동",4],["2026-03","B2H","기타",2],["2026-04","B2C","결제·환불",26],["2026-04","B2C","로그인·계정",28],["2026-04","B2C","콘텐츠 이용",22],["2026-04","B2C","기관 연동",0],["2026-04","B2C","기타",7],["2026-04","B2B","결제·환불",0],["2026-04","B2B","로그인·계정",19],["2026-04","B2B","콘텐츠 이용",12],["2026-04","B2B","기관 연동",15],["2026-04","B2B","기타",13],["2026-04","B2G","결제·환불",0],["2026-04","B2G","로그인·계정",11],["2026-04","B2G","콘텐츠 이용",5],["2026-04","B2G","기관 연동",13],["2026-04","B2G","기타",4],["2026-04","B2H","결제·환불",0],["2026-04","B2H","로그인·계정",5],["2026-04","B2H","콘텐츠 이용",9],["2026-04","B2H","기관 연동",7],["2026-04","B2H","기타",0],["2026-05","B2C","결제·환불",33],["2026-05","B2C","로그인·계정",26],["2026-05","B2C","콘텐츠 이용",15],["2026-05","B2C","기관 연동",0],["2026-05","B2C","기타",13],["2026-05","B2B","결제·환불",0],["2026-05","B2B","로그인·계정",13],["2026-05","B2B","콘텐츠 이용",10],["2026-05","B2B","기관 연동",9],["2026-05","B2B","기타",5],["2026-05","B2G","결제·환불",0],["2026-05","B2G","로그인·계정",13],["2026-05","B2G","콘텐츠 이용",8],["2026-05","B2G","기관 연동",8],["2026-05","B2G","기타",5],["2026-05","B2H","결제·환불",0],["2026-05","B2H","로그인·계정",5],["2026-05","B2H","콘텐츠 이용",5],["2026-05","B2H","기관 연동",2],["2026-05","B2H","기타",4],["2026-06","B2C","결제·환불",44],["2026-06","B2C","로그인·계정",25],["2026-06","B2C","콘텐츠 이용",19],["2026-06","B2C","기관 연동",0],["2026-06","B2C","기타",16],["2026-06","B2B","결제·환불",0],["2026-06","B2B","로그인·계정",14],["2026-06","B2B","콘텐츠 이용",9],["2026-06","B2B","기관 연동",12],["2026-06","B2B","기타",1],["2026-06","B2G","결제·환불",0],["2026-06","B2G","로그인·계정",8],["2026-06","B2G","콘텐츠 이용",10],["2026-06","B2G","기관 연동",2],["2026-06","B2G","기타",6],["2026-06","B2H","결제·환불",0],["2026-06","B2H","로그인·계정",5],["2026-06","B2H","콘텐츠 이용",5],["2026-06","B2H","기관 연동",4],["2026-06","B2H","기타",1],["2026-07","B2C","결제·환불",29],["2026-07","B2C","로그인·계정",22],["2026-07","B2C","콘텐츠 이용",25],["2026-07","B2C","기관 연동",0],["2026-07","B2C","기타",7],["2026-07","B2B","결제·환불",0],["2026-07","B2B","로그인·계정",12],["2026-07","B2B","콘텐츠 이용",10],["2026-07","B2B","기관 연동",11],["2026-07","B2B","기타",2],["2026-07","B2G","결제·환불",0],["2026-07","B2G","로그인·계정",10],["2026-07","B2G","콘텐츠 이용",5],["2026-07","B2G","기관 연동",8],["2026-07","B2G","기타",3],["2026-07","B2H","결제·환불",0],["2026-07","B2H","로그인·계정",5],["2026-07","B2H","콘텐츠 이용",4],["2026-07","B2H","기관 연동",8],["2026-07","B2H","기타",2],["2026-08","B2C","결제·환불",36],["2026-08","B2C","로그인·계정",35],["2026-08","B2C","콘텐츠 이용",20],["2026-08","B2C","기관 연동",0],["2026-08","B2C","기타",9],["2026-08","B2B","결제·환불",0],["2026-08","B2B","로그인·계정",12],["2026-08","B2B","콘텐츠 이용",9],["2026-08","B2B","기관 연동",18],["2026-08","B2B","기타",8],["2026-08","B2G","결제·환불",0],["2026-08","B2G","로그인·계정",8],["2026-08","B2G","콘텐츠 이용",2],["2026-08","B2G","기관 연동",6],["2026-08","B2G","기타",4],["2026-08","B2H","결제·환불",0],["2026-08","B2H","로그인·계정",5],["2026-08","B2H","콘텐츠 이용",1],["2026-08","B2H","기관 연동",1],["2026-08","B2H","기타",1],["2026-09","B2C","결제·환불",36],["2026-09","B2C","로그인·계정",28],["2026-09","B2C","콘텐츠 이용",24],["2026-09","B2C","기관 연동",0],["2026-09","B2C","기타",12],["2026-09","B2B","결제·환불",0],["2026-09","B2B","로그인·계정",20],["2026-09","B2B","콘텐츠 이용",7],["2026-09","B2B","기관 연동",15],["2026-09","B2B","기타",2],["2026-09","B2G","결제·환불",0],["2026-09","B2G","로그인·계정",8],["2026-09","B2G","콘텐츠 이용",6],["2026-09","B2G","기관 연동",11],["2026-09","B2G","기타",4],["2026-09","B2H","결제·환불",0],["2026-09","B2H","로그인·계정",7],["2026-09","B2H","콘텐츠 이용",3],["2026-09","B2H","기관 연동",3],["2026-09","B2H","기타",0]]},"members":{"cols":["채널","연령대","회원수","활성회원수"],"rows":[["B2C","20대",3595,1629],["B2C","30대",3080,1391],["B2C","40대",1732,771],["B2C","50대",805,373],["B2C","60대 이상",392,183],["B2B","20대",775,641],["B2B","30대",1378,1134],["B2B","40대",898,731],["B2B","50대",337,271],["B2B","60대 이상",78,58],["B2G","20대",184,151],["B2G","30대",441,362],["B2G","40대",508,406],["B2G","50대",482,403],["B2G","60대 이상",332,265],["B2H","20대",145,99],["B2H","30대",393,294],["B2H","40대",606,456],["B2H","50대",534,391],["B2H","60대 이상",331,240]]}};
+const SHEETS = { monthly: "집계_월별채널", inquiry: "집계_문의유형", members: "집계_회원구성" };
+// 직접 호스팅할 때 시트 주소를 여기에 넣으면 페이지를 열 때 바로 불러옵니다.
+const SHEET_URL = "https://docs.google.com/spreadsheets/d/1Koc2ioswOIJSEfGCj7J5oA5U-vFXioE7DNcoLQEbUsc/edit";
+
+const IN_CLAUDE = (() => {
+  try { return /claude|anthropic/i.test(location.hostname) || (window.top !== window && /claude|anthropic/i.test(document.referrer)); }
+  catch (e) { return true; }
+})();
+const CLAUDE_MSG = "지금 화면은 Claude 안의 미리보기라서 구글 시트에 연결할 수 없습니다. 이 HTML 파일을 GitHub Pages 등에 올린 주소에서 연결해 주세요. 공유 설정 문제는 아닙니다.";
+const ACCESS_MSG = "확인할 항목: ① 구글 드라이브에서 xlsx를 ‘Google 스프레드시트로 저장’했는지(xlsx 파일 그대로는 연결되지 않습니다) ② 공유가 ‘링크가 있는 모든 사용자 · 뷰어’인지 ③ 붙여넣은 주소가 저장한 구글 시트의 주소인지.";
+const CH = ["B2C", "B2B", "B2G", "B2H"];
+const CH_NAME = { B2C: "B2C 개인", B2B: "B2B 기업", B2G: "B2G 공공", B2H: "B2H 병원·검진" };
+const CONTENTS = ["명상", "감정일기", "심리검사", "AI대화"];
+const TYPES = ["결제·환불", "로그인·계정", "콘텐츠 이용", "기관 연동", "기타"];
+const AGES = ["20대", "30대", "40대", "50대", "60대 이상"];
+const NUM_COLS = new Set(["신규가입","해지","월말활성회원","MAU","명상","감정일기","심리검사","AI대화","총매출","문의건수","처리시간합","만족도합","건수","회원수","활성회원수"]);
+
+let data = null, months = [], state = { from: null, to: null, ch: new Set(CH) }, charts = {};
+
+function unpack(t) { return t.rows.map(r => Object.fromEntries(t.cols.map((c, i) => [c, r[i]]))); }
+function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function recall(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+
+function setData(d, label, live) {
+  data = d;
+  months = [...new Set(d.monthly.map(r => r["월"]))].sort();
+  const keepRange = state.from && months.includes(state.from) && months.includes(state.to);
+  if (!keepRange) { state.to = months[months.length - 1]; state.from = months[Math.max(0, months.length - 12)]; }
+  fillSelects();
+  document.getElementById("srcText").textContent = label;
+  document.getElementById("srcPill").classList.toggle("live", !!live);
+  render();
+}
+
+/* ---------- 구글 시트 불러오기 ----------
+   구글 시각화 API(gviz)를 <script> 태그로 불러옵니다(JSONP).
+   fetch 방식은 브라우저 보안 규칙(CORS)에 막힐 수 있어 쓰지 않습니다. */
+function gvizValue(h, cell) {
+  if (!cell || cell.v == null) return NUM_COLS.has(h) ? 0 : "";
+  let v = cell.v;
+  if (NUM_COLS.has(h)) return typeof v === "number" ? v : (Number(String(v).replace(/[,₩\s]/g, "")) || 0);
+  if (typeof v === "string") {
+    const d = v.match(/^Date\((\d+),(\d+)/);  // 날짜로 인식된 경우 → YYYY-MM
+    if (d) return `${d[1]}-${String(+d[2] + 1).padStart(2, "0")}`;
+    return v.trim();
+  }
+  return cell.f != null ? String(cell.f) : String(v);
+}
+let gvizSeq = 0;
+function gvizSheet(id, name) {
+  return new Promise((resolve, reject) => {
+    const cb = `__gviz_cb_${++gvizSeq}`;
+    const s = document.createElement("script");
+    let done = false;
+    const finish = (fn, arg) => { if (done) return; done = true; clearTimeout(timer); delete window[cb]; s.remove(); fn(arg); };
+    const timer = setTimeout(() => finish(reject, new Error(`${name} 시트 응답이 없습니다. 인터넷 연결을 확인해 주세요.`)), 15000);
+    window[cb] = res => {
+      if (!res || res.status === "error") {
+        const reason = (res && res.errors && res.errors[0] && (res.errors[0].detailed_message || res.errors[0].message)) || "";
+        finish(reject, new Error(/sheet|시트/i.test(reason) ? `${name} 시트를 찾지 못했습니다. 시트 탭 이름을 확인해 주세요.` : `${name} 시트를 읽지 못했습니다. ${ACCESS_MSG}`));
+        return;
+      }
+      const cols = res.table.cols.map(c => (c.label || "").trim());
+      const rows = res.table.rows
+        .map(r => Object.fromEntries(cols.map((h, i) => [h, gvizValue(h, r.c[i])])))
+        .filter(r => Object.values(r).some(v => v !== "" && v !== 0));
+      finish(resolve, rows);
+    };
+    // 콜백이 불리지 않고 로드만 끝나면 로그인 페이지가 온 것 → 공유 설정 문제
+    s.onload = () => setTimeout(() => finish(reject, new Error(`${name} 시트를 읽지 못했습니다. ${ACCESS_MSG}`)), 300);
+    s.onerror = () => finish(reject, new Error(`시트에 접속하지 못했습니다. ${ACCESS_MSG}`));
+    s.src = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?headers=1&sheet=${encodeURIComponent(name)}&tqx=${encodeURIComponent("out:json;responseHandler:" + cb)}`;
+    document.head.appendChild(s);
+  });
+}
+async function loadSheet(url) {
+  const m = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (!m) throw new Error("스프레드시트 주소 형식이 아닙니다. 주소창의 docs.google.com/spreadsheets/d/… 주소를 붙여넣어 주세요.");
+  const id = m[1], out = {};
+  for (const [key, name] of Object.entries(SHEETS)) {
+    const rows = await gvizSheet(id, name);
+    const need = key === "monthly" ? ["월", "채널", "MAU", "총매출"] : key === "inquiry" ? ["월", "채널", "문의유형", "건수"] : ["채널", "연령대", "활성회원수"];
+    const miss = need.filter(c => !(rows[0] && c in rows[0]));
+    if (miss.length) throw new Error(`${name} 시트에 ${miss.join(", ")} 열이 없습니다. 시트 이름과 머리글을 확인해 주세요.`);
+    out[key] = rows;
+  }
+  return out;
+}
+async function connect(url) {
+  const msg = document.getElementById("connectMsg");
+  if (IN_CLAUDE) { msg.className = "msg err"; msg.textContent = CLAUDE_MSG; return; }
+  msg.className = "msg"; msg.textContent = "불러오는 중입니다.";
+  try {
+    const d = await loadSheet(url.trim());
+    store("sheetUrl", url.trim());
+    setData(d, "구글 시트 연결됨", true);
+    msg.textContent = `불러왔습니다. 월 ${months.length}개, 집계 ${d.monthly.length}행.`;
+  } catch (e) {
+    msg.className = "msg err";
+    msg.textContent = e.message;
+  }
+}
+
+/* ---------- 필터 ---------- */
+function fillSelects() {
+  for (const id of ["fromM", "toM"]) {
+    const s = document.getElementById(id);
+    s.innerHTML = months.map(m => `<option value="${m}">${m}</option>`).join("");
+  }
+  syncFilters();
+}
+function syncFilters() {
+  document.getElementById("fromM").value = state.from;
+  document.getElementById("toM").value = state.to;
+  const len = months.indexOf(state.to) - months.indexOf(state.from) + 1;
+  const isLast = state.to === months[months.length - 1];
+  document.querySelectorAll("[data-preset]").forEach(b => {
+    const p = b.dataset.preset;
+    b.setAttribute("aria-pressed", String(isLast && (p === "all" ? len === months.length : len === +p)));
+  });
+  document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", String(state.ch.has(c.dataset.ch))));
+}
+function buildChips() {
+  const g = document.getElementById("chips");
+  CH.forEach(ch => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "chip"; b.dataset.ch = ch;
+    b.innerHTML = `<span class="sw" style="background:var(--c-${ch.toLowerCase()})"></span>${CH_NAME[ch]}`;
+    b.onclick = () => {
+      if (state.ch.has(ch)) { if (state.ch.size > 1) state.ch.delete(ch); } else state.ch.add(ch);
+      render();
+    };
+    g.appendChild(b);
+  });
+}
+
+/* ---------- 계산 ---------- */
+const sum = (a, f) => a.reduce((s, r) => s + (f ? f(r) : r), 0);
+function rowsIn(fromIdx, toIdx) {
+  const ms = new Set(months.slice(fromIdx, toIdx + 1));
+  return data.monthly.filter(r => ms.has(r["월"]) && state.ch.has(r["채널"]));
+}
+function at(m, col) { return sum(data.monthly.filter(r => r["월"] === m && state.ch.has(r["채널"])), r => r[col]); }
+function windowStats(fi, ti) {
+  if (fi < 0) return null;
+  const rows = rowsIn(fi, ti);
+  let churn = 0, base = 0;
+  for (let i = Math.max(fi, 1); i <= ti; i++) { churn += at(months[i], "해지"); base += at(months[i - 1], "월말활성회원"); }
+  const inq = sum(rows, r => r["문의건수"]);
+  return {
+    active: at(months[ti], "월말활성회원"),
+    mau: at(months[ti], "MAU"),
+    join: sum(rows, r => r["신규가입"]),
+    rev: sum(rows, r => r["총매출"]),
+    churn: base ? churn / base * 100 : null,
+    time: inq ? sum(rows, r => r["처리시간합"]) / inq : null,
+    sat: inq ? sum(rows, r => r["만족도합"]) / inq : null,
+  };
+}
+
+/* ---------- 표시 형식 ---------- */
+const fmt = n => Math.round(n).toLocaleString("ko-KR");
+function money(n) {
+  if (n >= 1e8) return [(n / 1e8).toFixed(2), "억원"];
+  return [fmt(n / 1e4), "만원"];
+}
+function delta(cur, prev, lowerIsBetter, unit) {
+  if (prev == null || cur == null) return `<span>–</span>`;
+  let diff, txt;
+  if (unit === "%p") { diff = cur - prev; txt = `${diff >= 0 ? "+" : ""}${diff.toFixed(2)}%p`; }
+  else if (unit === "h") { diff = cur - prev; txt = `${diff >= 0 ? "+" : ""}${diff.toFixed(1)}시간`; }
+  else { if (!prev) return `<span>–</span>`; diff = (cur - prev) / prev * 100; txt = `${diff >= 0 ? "+" : ""}${diff.toFixed(1)}%`; }
+  const good = lowerIsBetter ? diff < 0 : diff > 0;
+  const flat = Math.abs(diff) < 0.005;
+  const arrow = flat ? "–" : diff > 0 ? "▲" : "▼";
+  return `<b class="${flat ? "" : good ? "good" : "bad"}">${arrow} ${txt}</b>`;
+}
+
+/* ---------- 렌더 ---------- */
+function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function chColor(ch) { return css(`--c-${ch.toLowerCase()}`); }
+
+function renderKPIs(fi, ti) {
+  const len = ti - fi + 1;
+  const cur = windowStats(fi, ti), prev = windowStats(fi - len, fi - 1);
+  const [rv, ru] = money(cur.rev);
+  const tiles = [
+    ["월말 활성회원", fmt(cur.active), "명", delta(cur.active, prev?.active), `${state.to} 말 기준`],
+    ["MAU", fmt(cur.mau), "명", delta(cur.mau, prev?.mau), `${state.to} 기준 · 활성회원 대비 ${(cur.mau / cur.active * 100).toFixed(1)}%`],
+    ["신규가입", fmt(cur.join), "명", delta(cur.join, prev?.join), `월평균 ${fmt(cur.join / len)}명`],
+    ["총매출", rv, ru, delta(cur.rev, prev?.rev), `월평균 ${money(cur.rev / len).join("")}`],
+    ["월평균 해지율", cur.churn == null ? "–" : cur.churn.toFixed(2), "%", delta(cur.churn, prev?.churn, true, "%p"), "해지 ÷ 전월 말 활성회원"],
+    ["문의 평균 처리시간", cur.time == null ? "–" : cur.time.toFixed(1), "시간", delta(cur.time, prev?.time, true, "h"), cur.sat == null ? "" : `처리 만족도 ${cur.sat.toFixed(2)}점 / 5점`],
+  ];
+  document.getElementById("kpiNote").textContent = prev ? `증감은 직전 동일 기간(${months[fi - len]} ~ ${months[fi - 1]}) 대비입니다.` : "선택 기간 앞에 같은 길이의 데이터가 없어 증감을 표시하지 않습니다.";
+  document.getElementById("kpis").innerHTML = tiles.map(([k, v, u, d, sub]) =>
+    `<div class="kpi"><span class="k">${k}</span><span class="v">${v}<small>${u}</small></span><span class="d">${d}</span><span class="sub">${sub}</span></div>`).join("");
+}
+
+function baseOpts(extra = {}) {
+  const ink2 = css("--ink-2"), muted = css("--muted"), line = css("--line");
+  return Object.assign({
+    responsive: true, maintainAspectRatio: false, animation: false,
+    interaction: { mode: "index", intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: css("--surface"), titleColor: css("--ink"), bodyColor: ink2,
+        borderColor: line, borderWidth: 1, padding: 10, boxPadding: 4, usePointStyle: true,
+        titleFont: { family: "'IBM Plex Sans KR', system-ui, sans-serif", weight: "600" }, bodyFont: { family: "'IBM Plex Sans KR', system-ui, sans-serif" },
+      },
+    },
+    scales: {
+      x: { grid: { display: false }, border: { color: css("--axis") }, ticks: { color: muted, font: { family: "'IBM Plex Mono', ui-monospace, Menlo, monospace", size: 11 }, maxRotation: 0, autoSkipPadding: 12 } },
+      y: { beginAtZero: true, grid: { color: line }, border: { display: false }, ticks: { color: muted, font: { family: "'IBM Plex Mono', ui-monospace, Menlo, monospace", size: 11 }, callback: v => fmt(v) } },
+    },
+  }, extra);
+}
+function draw(id, cfg) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), cfg);
+}
+function legendHTML(chs, kind) {
+  return chs.map(ch => `<span><i class="${kind}" style="background:var(--c-${ch.toLowerCase()})"></i>${CH_NAME[ch]}</span>`).join("");
+}
+const label = m => m.slice(2).replace("-", ".");
+
+function renderCharts(fi, ti) {
+  const ms = months.slice(fi, ti + 1);
+  const chs = CH.filter(c => state.ch.has(c));
+  const surface = css("--surface");
+  const by = (m, ch, col) => (data.monthly.find(r => r["월"] === m && r["채널"] === ch) || {})[col] || 0;
+
+  document.getElementById("lgMau").innerHTML = legendHTML(chs, "ln");
+  draw("chMau", { type: "line", data: { labels: ms.map(label), datasets: chs.map(ch => ({
+      label: CH_NAME[ch], data: ms.map(m => by(m, ch, "MAU")), borderColor: chColor(ch), backgroundColor: chColor(ch),
+      borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, pointHoverBorderColor: surface, pointHoverBorderWidth: 2, tension: .25 })) },
+    options: baseOpts({ plugins: { ...baseOpts().plugins, tooltip: { ...baseOpts().plugins.tooltip, callbacks: { label: c => ` ${c.dataset.label}  ${fmt(c.parsed.y)}명` } } } }) });
+
+  document.getElementById("lgRev").innerHTML = legendHTML(chs, "");
+  const ro = baseOpts();
+  ro.scales.x.stacked = true; ro.scales.y.stacked = true;
+  ro.scales.y.ticks.callback = v => fmt(v);
+  ro.plugins.tooltip.callbacks = {
+    label: c => ` ${c.dataset.label}  ${fmt(c.parsed.y)}만원`,
+    footer: items => `합계  ${fmt(sum(items, i => i.parsed.y))}만원`,
+  };
+  draw("chRev", { type: "bar", data: { labels: ms.map(label), datasets: chs.map(ch => ({
+      label: CH_NAME[ch], data: ms.map(m => by(m, ch, "총매출") / 1e4), backgroundColor: chColor(ch),
+      borderColor: surface, borderWidth: { top: 2 }, borderSkipped: "bottom", borderRadius: 3, maxBarThickness: 28 })) }, options: ro });
+
+  const jo = baseOpts();
+  jo.plugins.tooltip.callbacks = { label: c => ` ${c.dataset.label}  ${fmt(c.parsed.y)}명` };
+  draw("chJoin", { type: "line", data: { labels: ms.map(label), datasets: [
+      { label: "신규가입", data: ms.map(m => at(m, "신규가입")), borderColor: css("--neutral-series"), backgroundColor: css("--neutral-series"), borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: .25 },
+      { label: "해지", data: ms.map(m => at(m, "해지")), borderColor: css("--neutral-series-2"), backgroundColor: css("--neutral-series-2"), borderDash: [5, 4], borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: .25 },
+    ] }, options: jo });
+
+  const rows = rowsIn(fi, ti);
+  const hbar = (id, labels, vals, unit) => {
+    const total = sum(vals);
+    const o = baseOpts({ indexAxis: "y", interaction: { mode: "nearest", axis: "y", intersect: false } });
+    o.scales.x.grid = { color: css("--line") }; o.scales.x.border = { display: false };
+    o.scales.x.ticks.callback = v => fmt(v);
+    o.scales.y.grid = { display: false }; o.scales.y.border = { color: css("--axis") };
+    o.scales.y.ticks = { color: css("--ink-2"), font: { family: "'IBM Plex Sans KR', system-ui, sans-serif", size: 12 } };
+    o.plugins.tooltip.callbacks = { label: c => ` ${fmt(c.parsed.x)}${unit} · ${(c.parsed.x / total * 100).toFixed(1)}%` };
+    draw(id, { type: "bar", data: { labels, datasets: [{ data: vals, backgroundColor: css("--accent"), borderRadius: 3, borderSkipped: "start", maxBarThickness: 22 }] }, options: o });
+  };
+  const cv = CONTENTS.map(c => sum(rows, r => r[c]));
+  hbar("chContent", CONTENTS, cv, "회");
+  const ct = sum(cv), topC = cv.indexOf(Math.max(...cv));
+  document.getElementById("insContent").innerHTML = `총 <b>${fmt(ct)}회</b> 이용. <b>${CONTENTS[topC]}</b> 비중이 ${(cv[topC] / ct * 100).toFixed(1)}%로 가장 높습니다.`;
+
+  const msSet = new Set(ms);
+  const inqRows = data.inquiry.filter(r => msSet.has(r["월"]) && state.ch.has(r["채널"]));
+  const iv = TYPES.map(t => sum(inqRows.filter(r => r["문의유형"] === t), r => r["건수"]));
+  hbar("chInq", TYPES, iv, "건");
+  const it = sum(iv), topI = iv.indexOf(Math.max(...iv));
+  document.getElementById("insInq").innerHTML = it ? `총 <b>${fmt(it)}건</b>. <b>${TYPES[topI]}</b> 문의가 ${(iv[topI] / it * 100).toFixed(1)}%로 가장 많습니다.` : "선택 기간에 문의가 없습니다.";
+
+  const tv = ms.map(m => { const n = at(m, "문의건수"); return n ? +(at(m, "처리시간합") / n).toFixed(1) : null; });
+  const to = baseOpts();
+  to.scales.y.ticks.callback = v => v;
+  to.plugins.tooltip.callbacks = { label: c => ` 평균 ${c.parsed.y.toFixed(1)}시간 · 문의 ${fmt(at(ms[c.dataIndex], "문의건수"))}건` };
+  draw("chTime", { type: "line", data: { labels: ms.map(label), datasets: [{ data: tv, borderColor: css("--accent"), backgroundColor: css("--accent"), borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: .25, spanGaps: true }] }, options: to });
+  const tf = tv.find(v => v != null), tl = [...tv].reverse().find(v => v != null);
+  document.getElementById("insTime").innerHTML = tf != null && ms.length > 1
+    ? `${label(ms[0])} <b>${tf.toFixed(1)}시간</b> → ${label(ms[ms.length - 1])} <b>${tl.toFixed(1)}시간</b> (${tl <= tf ? "" : "+"}${((tl - tf) / tf * 100).toFixed(0)}%)` : "";
+
+  document.getElementById("lgAge").innerHTML = legendHTML(chs, "");
+  const ao = baseOpts({ indexAxis: "y", interaction: { mode: "index", axis: "y", intersect: false } });
+  ao.scales = { x: { ...ao.scales.y, stacked: true }, y: { ...ao.scales.x, stacked: true, ticks: { color: css("--ink-2"), font: { family: "'IBM Plex Sans KR', system-ui, sans-serif", size: 12 } } } };
+  ao.scales.x.grid = { color: css("--line") };
+  ao.plugins.tooltip.callbacks = { label: c => ` ${c.dataset.label}  ${fmt(c.parsed.x)}명`, footer: items => `합계  ${fmt(sum(items, i => i.parsed.x))}명` };
+  draw("chAge", { type: "bar", data: { labels: AGES, datasets: chs.map(ch => ({
+      label: CH_NAME[ch], data: AGES.map(a => (data.members.find(r => r["채널"] === ch && r["연령대"] === a) || {})["활성회원수"] || 0),
+      backgroundColor: chColor(ch), borderColor: surface, borderWidth: { right: 2 }, borderSkipped: "start", borderRadius: 3, maxBarThickness: 24 })) }, options: ao });
+}
+
+function renderTable(fi, ti) {
+  const ms = months.slice(fi, ti + 1);
+  const line = (chs) => {
+    const sel = data.monthly.filter(r => ms.includes(r["월"]) && chs.includes(r["채널"]));
+    const atC = (m, col) => sum(data.monthly.filter(r => r["월"] === m && chs.includes(r["채널"])), r => r[col]);
+    let churn = 0, base = 0;
+    for (let i = Math.max(fi, 1); i <= ti; i++) { churn += atC(months[i], "해지"); base += atC(months[i - 1], "월말활성회원"); }
+    const active = atC(state.to, "월말활성회원"), mau = atC(state.to, "MAU"), inq = sum(sel, r => r["문의건수"]);
+    return [fmt(active), fmt(mau), active ? (mau / active * 100).toFixed(1) + "%" : "–", fmt(sum(sel, r => r["신규가입"])),
+      base ? (churn / base * 100).toFixed(2) + "%" : "–", fmt(sum(sel, r => r["총매출"]) / 1e4),
+      fmt(inq), inq ? (sum(sel, r => r["만족도합"]) / inq).toFixed(2) : "–"];
+  };
+  const chs = CH.filter(c => state.ch.has(c));
+  const head = ["채널", "월말 활성회원", "MAU", "MAU 비율", "신규가입", "월평균 해지율", "매출(만원)", "문의", "만족도"];
+  document.getElementById("tbl").innerHTML =
+    `<thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>` +
+    chs.map(ch => `<tr><td><span class="sw" style="background:var(--c-${ch.toLowerCase()})"></span>${CH_NAME[ch]}</td>${line([ch]).map(v => `<td>${v}</td>`).join("")}</tr>`).join("") +
+    `</tbody>` + (chs.length > 1 ? `<tfoot><tr><td>선택 채널 합계</td>${line(chs).map(v => `<td>${v}</td>`).join("")}</tr></tfoot>` : "");
+  document.getElementById("tblNote").textContent = `${state.from} ~ ${state.to} · 활성회원과 MAU는 ${state.to} 기준`;
+}
+
+function render() {
+  if (!data) return;
+  let fi = months.indexOf(state.from), ti = months.indexOf(state.to);
+  if (fi > ti) { [fi, ti] = [ti, fi]; state.from = months[fi]; state.to = months[ti]; }
+  syncFilters();
+  renderKPIs(fi, ti);
+  renderCharts(fi, ti);
+  renderTable(fi, ti);
+}
+
+/* ---------- 이벤트 ---------- */
+document.querySelectorAll("[data-preset]").forEach(b => b.onclick = () => {
+  const p = b.dataset.preset; state.to = months[months.length - 1];
+  state.from = p === "all" ? months[0] : months[Math.max(0, months.length - +p)];
+  render();
+});
+document.getElementById("fromM").onchange = e => { state.from = e.target.value; render(); };
+document.getElementById("toM").onchange = e => { state.to = e.target.value; render(); };
+document.getElementById("connectToggle").onclick = e => {
+  const p = document.getElementById("connectPanel"); p.hidden = !p.hidden;
+  e.currentTarget.setAttribute("aria-expanded", String(!p.hidden));
+};
+document.getElementById("connectBtn").onclick = () => connect(document.getElementById("sheetUrl").value);
+document.getElementById("demoBtn").onclick = () => {
+  setData({ monthly: unpack(DEMO.monthly), inquiry: unpack(DEMO.inquiry), members: unpack(DEMO.members) }, "데모 데이터", false);
+  document.getElementById("connectMsg").className = "msg";
+  document.getElementById("connectMsg").textContent = "데모 데이터로 바꿨습니다.";
+};
+const mq = matchMedia("(prefers-color-scheme: dark)");
+mq.addEventListener?.("change", render);
+new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+/* ---------- 시작 ---------- */
+buildChips();
+Chart.defaults.font.family = "'IBM Plex Sans KR', system-ui, sans-serif";
+setData({ monthly: unpack(DEMO.monthly), inquiry: unpack(DEMO.inquiry), members: unpack(DEMO.members) }, "데모 데이터", false);
+const saved = SHEET_URL || recall("sheetUrl");
+if (IN_CLAUDE) document.getElementById("connectMsg").textContent = CLAUDE_MSG;
+if (saved) { document.getElementById("sheetUrl").value = saved; if (!IN_CLAUDE) connect(saved); }
+</script>
+
+</body>
+</html>
